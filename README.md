@@ -81,7 +81,7 @@ npm run build
 
 ## 🏗️ Project Structure
 
-```
+```txt
 silhouette3D/
 ├── src/
 │   ├── components/
