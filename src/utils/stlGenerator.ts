@@ -14,15 +14,15 @@ export function generateSTL(
   baseMode: 'bounding' | 'cover' = 'bounding'
 ): ArrayBuffer {
   const { width, height, pixels } = silhouette;
-  const triangles: Triangle[] = [];
+  const baseTriangles: Triangle[] = [];
+  const silhouetteTriangles: Triangle[] = [];
   const ps = scale;
   const hw = (width * ps) / 2;
   const hh = (height * ps) / 2;
 
-  // Base layer
+  // Base layer - separate array, won't be affected by mesh smoothing
   if (baseThickness > 0) {
     if (baseMode === 'bounding') {
-      // Bounding box mode - single rectangle covering all pixels
       let minX = width, maxX = 0, minY = height, maxY = 0;
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
@@ -36,10 +36,9 @@ export function generateSTL(
         const bx0 = minX * ps - hw, by0 = minY * ps - hh;
         const bx1 = (maxX + 1) * ps - hw, by1 = (maxY + 1) * ps - hh;
         const bz0 = -baseThickness, bz1 = 0;
-        addBox(triangles, bx0, by0, bz0, bx1, by1, bz1);
+        addBox(baseTriangles, bx0, by0, bz0, bx1, by1, bz1);
       }
     } else {
-      // Cover mode - follow silhouette outline per row
       const bz0 = -baseThickness, bz1 = 0;
       for (let y = 0; y < height; y++) {
         let minX = -1, maxX = -1;
@@ -52,13 +51,13 @@ export function generateSTL(
         if (minX !== -1 && maxX !== -1) {
           const bx0 = minX * ps - hw, by0 = y * ps - hh;
           const bx1 = (maxX + 1) * ps - hw, by1 = (y + 1) * ps - hh;
-          addBox(triangles, bx0, by0, bz0, bx1, by1, bz1);
+          addBox(baseTriangles, bx0, by0, bz0, bx1, by1, bz1);
         }
       }
     }
   }
 
-  // Main silhouette
+  // Main silhouette - separate array, will be processed by mesh smoothing
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (pixels[y * width + x] === 1) {
@@ -66,40 +65,38 @@ export function generateSTL(
         const x1 = x0 + ps, y1 = y0 + ps;
         const zB = 0, zT = thickness;
 
-        // Top
-        triangles.push({ v1: {x:x0,y:y0,z:zT}, v2: {x:x1,y:y0,z:zT}, v3: {x:x1,y:y1,z:zT}, normal: {x:0,y:0,z:1} });
-        triangles.push({ v1: {x:x0,y:y0,z:zT}, v2: {x:x1,y:y1,z:zT}, v3: {x:x0,y:y1,z:zT}, normal: {x:0,y:0,z:1} });
-        // Bottom
-        triangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x1,y:y1,z:zB}, v3: {x:x1,y:y0,z:zB}, normal: {x:0,y:0,z:-1} });
-        triangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x0,y:y1,z:zB}, v3: {x:x1,y:y1,z:zB}, normal: {x:0,y:0,z:-1} });
-        // Right
+        silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zT}, v2: {x:x1,y:y0,z:zT}, v3: {x:x1,y:y1,z:zT}, normal: {x:0,y:0,z:1} });
+        silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zT}, v2: {x:x1,y:y1,z:zT}, v3: {x:x0,y:y1,z:zT}, normal: {x:0,y:0,z:1} });
+        silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x1,y:y1,z:zB}, v3: {x:x1,y:y0,z:zB}, normal: {x:0,y:0,z:-1} });
+        silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x0,y:y1,z:zB}, v3: {x:x1,y:y1,z:zB}, normal: {x:0,y:0,z:-1} });
         if (x === width - 1 || pixels[y * width + x + 1] === 0) {
-          triangles.push({ v1: {x:x1,y:y0,z:zB}, v2: {x:x1,y:y1,z:zB}, v3: {x:x1,y:y1,z:zT}, normal: {x:1,y:0,z:0} });
-          triangles.push({ v1: {x:x1,y:y0,z:zB}, v2: {x:x1,y:y1,z:zT}, v3: {x:x1,y:y0,z:zT}, normal: {x:1,y:0,z:0} });
+          silhouetteTriangles.push({ v1: {x:x1,y:y0,z:zB}, v2: {x:x1,y:y1,z:zB}, v3: {x:x1,y:y1,z:zT}, normal: {x:1,y:0,z:0} });
+          silhouetteTriangles.push({ v1: {x:x1,y:y0,z:zB}, v2: {x:x1,y:y1,z:zT}, v3: {x:x1,y:y0,z:zT}, normal: {x:1,y:0,z:0} });
         }
-        // Left
         if (x === 0 || pixels[y * width + x - 1] === 0) {
-          triangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x0,y:y1,z:zB}, v3: {x:x0,y:y1,z:zT}, normal: {x:-1,y:0,z:0} });
-          triangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x0,y:y1,z:zT}, v3: {x:x0,y:y0,z:zT}, normal: {x:-1,y:0,z:0} });
+          silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x0,y:y1,z:zB}, v3: {x:x0,y:y1,z:zT}, normal: {x:-1,y:0,z:0} });
+          silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x0,y:y1,z:zT}, v3: {x:x0,y:y0,z:zT}, normal: {x:-1,y:0,z:0} });
         }
-        // Front
         if (y === 0 || pixels[(y - 1) * width + x] === 0) {
-          triangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x1,y:y0,z:zB}, v3: {x:x1,y:y0,z:zT}, normal: {x:0,y:-1,z:0} });
-          triangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x1,y:y0,z:zT}, v3: {x:x0,y:y0,z:zT}, normal: {x:0,y:-1,z:0} });
+          silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x1,y:y0,z:zB}, v3: {x:x1,y:y0,z:zT}, normal: {x:0,y:-1,z:0} });
+          silhouetteTriangles.push({ v1: {x:x0,y:y0,z:zB}, v2: {x:x1,y:y0,z:zT}, v3: {x:x0,y:y0,z:zT}, normal: {x:0,y:-1,z:0} });
         }
-        // Back
         if (y === height - 1 || pixels[(y + 1) * width + x] === 0) {
-          triangles.push({ v1: {x:x0,y:y1,z:zB}, v2: {x:x1,y:y1,z:zB}, v3: {x:x1,y:y1,z:zT}, normal: {x:0,y:1,z:0} });
-          triangles.push({ v1: {x:x0,y:y1,z:zB}, v2: {x:x1,y:y1,z:zT}, v3: {x:x0,y:y1,z:zT}, normal: {x:0,y:1,z:0} });
+          silhouetteTriangles.push({ v1: {x:x0,y:y1,z:zB}, v2: {x:x1,y:y1,z:zB}, v3: {x:x1,y:y1,z:zT}, normal: {x:0,y:1,z:0} });
+          silhouetteTriangles.push({ v1: {x:x0,y:y1,z:zB}, v2: {x:x1,y:y1,z:zT}, v3: {x:x0,y:y1,z:zT}, normal: {x:0,y:1,z:0} });
         }
       }
     }
   }
 
-  let processed = triangles;
-  if (meshMode === 'simplify') processed = simplifyMesh(triangles);
+  // Apply mesh smoothing only to silhouette, NOT to base layer
+  let processedSilhouette = silhouetteTriangles;
+  if (meshMode === 'simplify') processedSilhouette = simplifyMesh(silhouetteTriangles);
 
-  return createBinarySTL(processed);
+  // Combine: base layer (unchanged) + processed silhouette
+  const allTriangles = [...baseTriangles, ...processedSilhouette];
+
+  return createBinarySTL(allTriangles);
 }
 
 function addBox(triangles: Triangle[], x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) {
@@ -305,13 +302,14 @@ export function downloadFile(content: string | Blob, filename: string, mime='app
 export function generateThreeGeometry(
   silhouette: SilhouetteData,
   thickness=3, scale=1, baseThickness=0, baseMode: 'bounding' | 'cover' = 'bounding'
-): { positions: Float32Array; normals: Float32Array; indices: Uint32Array } {
+): { positions: Float32Array; normals: Float32Array; indices: Uint32Array; baseVertexCount: number } {
   const {width,height,pixels}=silhouette;
   let vc=0;
   const ps=scale,hw=(width*ps)/2,hh=(height*ps)/2;
   const pos:number[]=[],nor:number[]=[],idx:number[]=[];
 
-  // Base
+  // Base - track vertex count
+  let baseVertexCount = 0;
   if(baseThickness>0){
     if(baseMode === 'bounding'){
       let minX=width,maxX=0,minY=height,maxY=0;
@@ -321,7 +319,9 @@ export function generateThreeGeometry(
       if(maxX>=minX&&maxY>=minY){
         const bx0=minX*ps-hw,by0=minY*ps-hh,bx1=(maxX+1)*ps-hw,by1=(maxY+1)*ps-hh;
         const bz0=-baseThickness,bz1=0;
-        addBoxGeo(pos,nor,idx,vc,bx0,by0,bz0,bx1,by1,bz1);vc+=24;
+        addBoxGeo(pos,nor,idx,vc,bx0,by0,bz0,bx1,by1,bz1);
+        baseVertexCount = 24;
+        vc+=24;
       }
     } else {
       // Cover mode
@@ -336,13 +336,15 @@ export function generateThreeGeometry(
         }
         if(minX!==-1&&maxX!==-1){
           const bx0=minX*ps-hw,by0=y*ps-hh,bx1=(maxX+1)*ps-hw,by1=(y+1)*ps-hh;
-          addBoxGeo(pos,nor,idx,vc,bx0,by0,bz0,bx1,by1,bz1);vc+=24;
+          addBoxGeo(pos,nor,idx,vc,bx0,by0,bz0,bx1,by1,bz1);
+          baseVertexCount += 24;
+          vc+=24;
         }
       }
     }
   }
 
-  // Main
+  // Main silhouette
   for(let y=0;y<height;y++)for(let x=0;x<width;x++){
     if(pixels[y*width+x]===1){
       const x0=x*ps-hw,y0=y*ps-hh,x1=x0+ps,y1=y0+ps;
@@ -361,7 +363,7 @@ export function generateThreeGeometry(
       if(y===height-1||pixels[(y+1)*width+x]===0){s=vc;pos.push(x0,y1,zB,x1,y1,zB,x1,y1,zT,x0,y1,zT);nor.push(0,1,0,0,1,0,0,1,0,0,1,0);idx.push(s,s+1,s+2,s,s+2,s+3);vc+=4;}
     }
   }
-  return {positions:new Float32Array(pos),normals:new Float32Array(nor),indices:new Uint32Array(idx)};
+  return {positions:new Float32Array(pos),normals:new Float32Array(nor),indices:new Uint32Array(idx), baseVertexCount};
 }
 
 function addBoxGeo(pos:number[],nor:number[],idx:number[],vc:number,x0:number,y0:number,z0:number,x1:number,y1:number,z1:number){
